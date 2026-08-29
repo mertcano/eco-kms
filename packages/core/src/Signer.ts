@@ -48,10 +48,12 @@ export class Signer {
     txData: TypedTxData
   ) {
     const tx = TransactionFactory.fromTxData(txData, { common: this.common })
-    const digest = tx.getMessageToSign()
-    const digestBuffer = Array.isArray(digest)
-      ? Buffer.concat(digest)
-      : Buffer.from(digest)
+    // `getHashedMessageToSign()` returns the 32-byte keccak-256 digest that the
+    // signature must cover. `getMessageToSign()` returns the *unhashed* signing
+    // payload instead - an array of RLP items for legacy transactions and the
+    // serialized envelope for typed transactions - so signing that value would
+    // produce a signature over the wrong bytes and an unusable transaction.
+    const digestBuffer = Buffer.from(tx.getHashedMessageToSign())
     const { r, s, v } = await this.wallets.ecsign(
       account,
       digestBuffer,
@@ -90,10 +92,14 @@ export class Signer {
     account: { keyId: string; address?: Buffer },
     digest: string | Buffer
   ) {
-    const { r, s, v } = await this.wallets.ecsign(
-      account,
-      UBuffer.bufferOrHex(digest)
-    )
+    const digestBuffer = UBuffer.bufferOrHex(digest)
+    // secp256k1 signing operates on a 32-byte digest. Rejecting other lengths
+    // stops a caller from accidentally handing a raw, unhashed message to the
+    // signing key.
+    if (digestBuffer.length !== 32) {
+      throw new Error('Signer: digest must be exactly 32 bytes.')
+    }
+    const { r, s, v } = await this.wallets.ecsign(account, digestBuffer)
 
     // Convert to unsigned hex strings and pad to ensure consistent length
     const rStr = Buffer.from(toUnsigned(fromSigned(r)))
