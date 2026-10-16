@@ -4,7 +4,6 @@ import {
   toUnsigned,
   bigIntToBytes,
   hashPersonalMessage,
-  intToHex,
 } from '@ethereumjs/util'
 import { TransactionFactory, TypedTxData } from '@ethereumjs/tx'
 import { Common } from '@ethereumjs/common'
@@ -47,6 +46,11 @@ export class Signer {
     account: { keyId: string; address?: Buffer },
     txData: TypedTxData
   ) {
+    // Enforce EIP-155 replay protection by ensuring a chainId/common configuration exists
+    if (!this.common) {
+      throw new Error('Signer: chainId is required for transaction signing to prevent replay attacks.')
+    }
+
     const tx = TransactionFactory.fromTxData(txData, { common: this.common })
     // `getHashedMessageToSign()` returns the 32-byte keccak-256 digest that the
     // signature must cover. `getMessageToSign()` returns the *unhashed* signing
@@ -57,7 +61,7 @@ export class Signer {
     const { r, s, v } = await this.wallets.ecsign(
       account,
       digestBuffer,
-      this.common?.chainId()
+      this.common.chainId()
     )
 
     const signed = TransactionFactory.fromTxData(
